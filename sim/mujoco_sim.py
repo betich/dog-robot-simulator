@@ -87,20 +87,72 @@ class MuJoCoSim:
             if name in self._act_idx:
                 self.data.ctrl[self._act_idx[name]] = angle
 
+    def _cmd_is_zero(self, cmd: dict) -> bool:
+        return (abs(cmd.get("linear_x", 0)) < 1e-3
+                and abs(cmd.get("linear_y", 0)) < 1e-3
+                and abs(cmd.get("angular_z", 0)) < 1e-3)
+
+    def _make_key_callback(self, local_cmd: dict):
+        """
+        Arrow key control for the MuJoCo viewer window.
+
+        ↑ / ↓  — forward / backward
+        ← / →  — turn left / right
+        Space   — stop
+        """
+        # GLFW key codes
+        _BINDINGS = {
+            265: ("linear_x",  0.3),   # ↑  forward
+            264: ("linear_x", -0.3),   # ↓  backward
+            263: ("angular_z", 0.6),   # ←  turn left
+            262: ("angular_z",-0.6),   # →  turn right
+        }
+
+        def _cb(keycode):
+            if keycode == 32:           # Space  stop
+                local_cmd.update({"linear_x": 0.0, "linear_y": 0.0, "angular_z": 0.0})
+                print("[key] stop")
+                return
+            binding = _BINDINGS.get(keycode)
+            if binding:
+                axis, value = binding
+                local_cmd["linear_x"]  = 0.0
+                local_cmd["linear_y"]  = 0.0
+                local_cmd["angular_z"] = 0.0
+                local_cmd[axis] = value
+                print(f"[key] {axis}={value:+.2f}")
+
+        return _cb
+
     def run(self):
         dt = self.model.opt.timestep
-        # Gait control runs every N physics steps to reduce IK overhead
-        ctrl_every = max(1, round(0.005 / dt))  # ~5 ms control period
+        ctrl_every   = max(1, round(0.005 / dt))   # ~5 ms control period
+        warmup_steps = round(1.0 / dt)              # hold q=0 for 1 s before gait
 
-        with mujoco.viewer.launch_passive(self.model, self.data) as viewer:
+        # ctrl=0 → position actuators hold qpos=0, which is the MJCF rest pose
+        self.data.ctrl[:] = 0.0
+
+        # Local keyboard cmd; ZMQ cmd takes priority when non-zero
+        local_cmd: dict = {"linear_x": 0.0, "linear_y": 0.0, "angular_z": 0.0}
+
+        with mujoco.viewer.launch_passive(
+            self.model, self.data,
+            key_callback=self._make_key_callback(local_cmd),
+        ) as viewer:
             step = 0
             while viewer.is_running():
                 t0 = time.perf_counter()
 
                 if step % ctrl_every == 0:
-                    cmd     = self.bridge.recv_cmd()
-                    targets = self.gait.step(cmd)
-                    self._apply_targets(targets)
+                    zmq_cmd = self.bridge.recv_cmd()
+                    # ZMQ overrides keyboard when ROS 2 is actively sending
+                    cmd = zmq_cmd if not self._cmd_is_zero(zmq_cmd) else local_cmd
+
+                    if step >= warmup_steps and not self._cmd_is_zero(cmd):
+                        targets = self.gait.step(cmd)
+                        self._apply_targets(targets)
+                    else:
+                        self.gait.phase = 0.0
 
                 mujoco.mj_step(self.model, self.data)
 
@@ -110,7 +162,6 @@ class MuJoCoSim:
                 viewer.sync()
                 step += 1
 
-                # Soft real-time: sleep only if ahead of wall clock
                 elapsed   = time.perf_counter() - t0
                 remaining = dt - elapsed
                 if remaining > 1e-4:

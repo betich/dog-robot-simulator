@@ -1,6 +1,25 @@
 """
 Kinematic IK trot gait controller for ANYmal C.
 
+Joint naming convention
+-----------------------
+Leg prefix:
+    LF  Left  Front
+    RF  Right Front
+    LH  Left  Hind
+    RH  Right Hind
+
+Joint suffix:
+    HAA  Hip Abduction / Adduction  — swings the leg in/out laterally
+    HFE  Hip Flexion  / Extension   — swings the leg forward/backward
+    KFE  Knee Flexion / Extension   — bends/straightens the knee
+
+Full joint list (12 total, 3 per leg):
+    LF_HAA  LF_HFE  LF_KFE
+    RF_HAA  RF_HFE  RF_KFE
+    LH_HAA  LH_HFE  LH_KFE
+    RH_HAA  RH_HFE  RH_KFE
+
 All parameters are derived from the anybotics_anymal_c MJCF.
 Verify HIP_POS, L_THIGH, L_SHANK against the actual XML before running.
 If knees appear inverted in the viewer, flip the sign of KFE_SIGN.

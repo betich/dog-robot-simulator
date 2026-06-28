@@ -1,4 +1,4 @@
-# Robot Simulation
+# Dog Robot Simulation
 
 This is my playground for trying MuJoCo + Open-RMF Simulation robot simulation on MacOS.
 
@@ -78,7 +78,21 @@ mjpython sim/main.py --model mujoco_menagerie/anybotics_anymal_c/scene.xml
 
 The MuJoCo passive viewer opens. The robot stands and runs the trot gait when commanded.
 
-### Step 3 — Send a drive command (optional, for testing)
+### Keyboard control (viewer window)
+
+Click the MuJoCo viewer window to give it focus, then use:
+
+| Key     | Action     |
+| ------- | ---------- |
+| `↑`     | Forward    |
+| `↓`     | Backward   |
+| `←`     | Turn left  |
+| `→`     | Turn right |
+| `Space` | Stop       |
+
+Keyboard drives only when ZMQ/ROS 2 is idle. If Docker is sending `/cmd_vel`, that takes priority.
+
+### Step 3 — Send a drive command via ROS 2 (optional)
 
 In a new terminal, publish a `/cmd_vel` directly into ROS 2 inside Docker:
 
