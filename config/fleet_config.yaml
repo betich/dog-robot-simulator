@@ -1,0 +1,23 @@
+fleet_name: anymal_fleet
+fleet_manager:
+  prefix: "anymal"
+
+robots:
+  anymal_c_01:
+    charger: "charger_1"
+    start_waypoint: "start"
+
+# These limits are passed to RMF traffic negotiation.
+# They inform how RMF schedules paths around other fleets.
+limits:
+  linear:
+    velocity: 0.5      # m/s
+    acceleration: 0.5  # m/s²
+  angular:
+    velocity: 0.8      # rad/s
+    acceleration: 1.0  # rad/s²
+
+footprint:
+  # Bounding circle radius (m) used by RMF traffic negotiation.
+  # ANYmal C chassis ≈ 0.55 m × 0.38 m; use circumradius.
+  radius: 0.35

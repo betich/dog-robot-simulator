@@ -1,0 +1,21 @@
+FROM ros:humble-ros-base
+
+# System deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3-pip \
+      ros-humble-rmf-fleet-msgs \
+      ros-humble-tf2-ros \
+      ros-humble-nav2-msgs \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install --no-cache-dir pyzmq
+
+# Workspace is mounted at runtime (see docker-compose.yml volumes)
+WORKDIR /ros2_ws
+
+# Build happens in the entrypoint so edits to the workspace are picked up
+# without rebuilding the image.
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+ENTRYPOINT ["/docker-entrypoint.sh"]

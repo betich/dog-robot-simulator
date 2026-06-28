@@ -1,0 +1,36 @@
+services:
+
+  # ── ZMQ ↔ ROS 2 bridge ───────────────────────────────────────────────────
+  anymal_bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile.ros2
+    volumes:
+      - ./ros2_ws:/ros2_ws
+    ports:
+      # Expose cmd PUB so macOS MuJoCo can SUB to localhost:5556
+      - "5556:5556"
+    environment:
+      ROS_DOMAIN_ID: "42"
+      # State comes FROM macOS MuJoCo; host.docker.internal resolves to the Mac
+      ZMQ_STATE_ADDR: "tcp://host.docker.internal:5555"
+      # Cmd published by this container, bound inside
+      ZMQ_CMD_ADDR: "tcp://0.0.0.0:5556"
+    command: ros2 run anymal_bridge bridge_node
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ── Open-RMF fleet adapter ────────────────────────────────────────────────
+  rmf_adapter:
+    build:
+      context: .
+      dockerfile: Dockerfile.ros2
+    volumes:
+      - ./ros2_ws:/ros2_ws
+    environment:
+      ROS_DOMAIN_ID: "42"
+    command: ros2 run rmf_adapter anymal_fleet_adapter
+    depends_on:
+      - anymal_bridge
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

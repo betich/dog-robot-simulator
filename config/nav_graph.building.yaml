@@ -1,0 +1,23 @@
+# Open-RMF building map (traffic-editor YAML format).
+# Edit waypoints and lanes to match your MuJoCo world geometry.
+# Load this with:  ros2 run rmf_building_map_tools building_map_server config/nav_graph.building.yaml
+
+building_name: simulation_lab
+
+levels:
+  L1:
+    elevation: 0.0
+    vertices:
+      # [x (m), y (m), {name, is_charger, is_parking_spot, ...}]
+      - [0.0, 0.0, {name: start}]
+      - [3.0, 0.0, {name: wp_A}]
+      - [3.0, 3.0, {name: wp_B}]
+      - [0.0, 3.0, {name: wp_C}]
+      - [0.0, 0.0, {name: charger_1, is_charger: true}]
+
+    lanes:
+      # [from_vertex_index, to_vertex_index, {bidirectional: true}]
+      - [0, 1, {bidirectional: true}]
+      - [1, 2, {bidirectional: true}]
+      - [2, 3, {bidirectional: true}]
+      - [3, 0, {bidirectional: true}]

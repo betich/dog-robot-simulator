@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# ROS 2 workspace build artifacts
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+
+# MuJoCo model (get it via: git submodule add or manual download)
+mujoco_menagerie/
+
+# macOS
+.DS_Store
