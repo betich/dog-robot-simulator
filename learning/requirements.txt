@@ -1,0 +1,23 @@
+# RL / MJX side — install into a DEDICATED venv, not ~/.local:
+#
+#   python -m venv .venv-rl && source .venv-rl/bin/activate
+#   pip install -r learning/requirements.txt
+#
+# These versions are pinned as a single coherent, same-era (mid-2024) bundle.
+# Do not bump one in isolation — the three-way jax <-> flax <-> brax constraint is
+# fragile:
+#   * brax 0.10.x calls jax.device_put_replicated  -> needs jax 0.4.x (removed in 0.5/0.6+)
+#   * recent flax imports jax.experimental.layout.Format -> needs NEW jax
+# so old-brax and new-flax cannot share one jax. This bundle keeps all three in
+# the jax-0.4.x era. MJX runs fine on jax 0.4.x.
+#
+# For GPU training, swap to the matching jax[cuda12]==0.4.34 wheel.
+jax==0.4.34
+jaxlib==0.4.34
+flax==0.8.5
+brax==0.10.5
+mujoco==3.2.3          # provides `mujoco.mjx`
+numpy<2
+
+# Optional: headless video output for `learning.play --video walk.gif`
+imageio>=2.30

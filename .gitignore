@@ -14,3 +14,5 @@ mujoco_menagerie/
 
 # macOS
 .DS_Store
+
+.venv-rl/

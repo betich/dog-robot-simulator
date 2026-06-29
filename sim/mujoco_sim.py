@@ -21,6 +21,11 @@ JOINT_ORDER = [
     "RH_HAA", "RH_HFE", "RH_KFE",
 ]
 
+# Leg position-actuator gains (MJCF default kp=100 is too soft — see
+# _set_actuator_gains).  Raise kp if the body still sags; lower if it rings.
+ACTUATOR_KP = 200.0
+ACTUATOR_KV = 3.0
+
 
 class MuJoCoSim:
     def __init__(self, model_path: str, bridge: ZMQBridge, gait: GaitController):
@@ -52,6 +57,56 @@ class MuJoCoSim:
 
         print(f"[sim] model loaded — dt={self.model.opt.timestep*1000:.1f} ms  "
               f"nu={self.model.nu}  nq={self.model.nq}")
+
+        self._set_actuator_gains(kp=ACTUATOR_KP, kv=ACTUATOR_KV)
+
+    def _set_actuator_gains(self, kp: float, kv: float):
+        """
+        Stiffen the leg position actuators.
+
+        The MJCF ships kp=100 with no velocity damping, which is too soft for a
+        ~45 kg robot: under load the stance legs sag, so a shortening swing leg
+        just drops the whole body instead of lifting its foot — the gait cycles
+        but the robot doesn't translate ("wiggles in place").  A higher kp keeps
+        the stance legs rigid enough for the swing feet to actually clear, and a
+        small kv damps the servo so the higher gain doesn't ring.
+
+        MuJoCo position actuator: gainprm=[kp,0,0], biasprm=[0,-kp,-kv].
+        """
+        for i in range(self.model.nu):
+            self.model.actuator_gainprm[i][0] = kp
+            self.model.actuator_biasprm[i][1] = -kp
+            self.model.actuator_biasprm[i][2] = -kv
+        print(f"[sim] actuator gains set — kp={kp}  kv={kv}")
+
+    def _init_standing_pose(self):
+        """
+        Place the robot in the authoritative standing pose before stepping.
+
+        The plain anymal_c.xml has no keyframe, so we set it explicitly: base at
+        z=0.56 with identity orientation and the joints at the gait controller's
+        nominal (keyframe) angles.  Without this the free-joint reference is the
+        180°-flipped default and the legs start straight, so the robot would have
+        to fall into pose from a bad configuration.
+        """
+        mujoco.mj_resetData(self.model, self.data)
+
+        nominal = self.gait.nominal_targets()
+
+        # Base free joint: qpos[0:3] = position, qpos[3:7] = quaternion (w,x,y,z)
+        self.data.qpos[0:3] = [0.0, 0.0, 0.56]
+        self.data.qpos[3:7] = [1.0, 0.0, 0.0, 0.0]
+
+        for name, angle in nominal.items():
+            if name in self._jnt_qpos_idx:
+                self.data.qpos[self._jnt_qpos_idx[name]] = angle
+
+        # Hold the same pose with the position actuators.
+        for name, angle in nominal.items():
+            if name in self._act_idx:
+                self.data.ctrl[self._act_idx[name]] = angle
+
+        mujoco.mj_forward(self.model, self.data)
 
     def _extract_state(self) -> dict:
         qpos = self.data.qpos
@@ -127,10 +182,10 @@ class MuJoCoSim:
     def run(self):
         dt = self.model.opt.timestep
         ctrl_every   = max(1, round(0.005 / dt))   # ~5 ms control period
-        warmup_steps = round(1.0 / dt)              # hold q=0 for 1 s before gait
+        warmup_steps = round(1.0 / dt)              # settle in stance for 1 s
 
-        # ctrl=0 → position actuators hold qpos=0, which is the MJCF rest pose
-        self.data.ctrl[:] = 0.0
+        # Start in the authoritative standing pose, holding it with the actuators.
+        self._init_standing_pose()
 
         # Local keyboard cmd; ZMQ cmd takes priority when non-zero
         local_cmd: dict = {"linear_x": 0.0, "linear_y": 0.0, "angular_z": 0.0}
@@ -148,11 +203,14 @@ class MuJoCoSim:
                     # ZMQ overrides keyboard when ROS 2 is actively sending
                     cmd = zmq_cmd if not self._cmd_is_zero(zmq_cmd) else local_cmd
 
-                    if step >= warmup_steps and not self._cmd_is_zero(cmd):
-                        targets = self.gait.step(cmd)
-                        self._apply_targets(targets)
-                    else:
-                        self.gait.phase = 0.0
+                    # During warmup, ignore commands and just hold the stance so
+                    # the robot settles before it is allowed to walk.
+                    if step < warmup_steps:
+                        cmd = {"linear_x": 0.0, "linear_y": 0.0, "angular_z": 0.0}
+
+                    # The controller always returns a valid pose (the standing
+                    # pose when stopped), so we apply targets every control step.
+                    self._apply_targets(self.gait.step(cmd))
 
                 mujoco.mj_step(self.model, self.data)
 
