@@ -13,8 +13,22 @@ experiment: copy `default_config()`, tweak, pass it to the entry point.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple
+from typing import Callable, Dict, List, Tuple
+
+# learning/config.py -> repo root is two levels up.
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def checkpoint_path(name: str) -> str:
+    """Where train.py saves / play.py loads an experiment's policy params."""
+    return os.path.join(REPO_ROOT, "learning", "checkpoints", name, "anymal_ppo")
+
+
+def results_dir(name: str) -> str:
+    """Standard home for an experiment's rendering + metrics (rollout.gif, metrics.txt)."""
+    return os.path.join(REPO_ROOT, "results", name)
 
 
 @dataclass
@@ -120,6 +134,7 @@ class PPOConfig:
 
 @dataclass
 class Config:
+    name: str = "baseline"              # experiment id; drives checkpoint/results paths
     robot: RobotConfig = field(default_factory=RobotConfig)
     sim: SimConfig = field(default_factory=SimConfig)
     action: ActionConfig = field(default_factory=ActionConfig)
@@ -132,18 +147,81 @@ class Config:
 
 
 def default_config() -> Config:
-    """The clean, simple-but-effective starting point."""
-    return Config()
+    """The clean, simple-but-effective starting point (== the 'baseline' experiment)."""
+    return Config(name="baseline")
 
 
-def smoke_config() -> Config:
+# ── experiments ───────────────────────────────────────────────────────────────
+# Each builds on the baseline and changes ONE axis, so a benchmark delta is
+# attributable.  Baseline result: mean fwd speed +0.483 m/s vs vx=+0.80 command
+# (it stays upright but undershoots — the policy is stable but lazy).  Keep PPO
+# hyperparameters identical to the baseline across experiments; only the shaping
+# below changes, so `play --vx 0.8` numbers are comparable.  Run e.g.:
+#     python -m learning.train --config tight_tracking
+#     python -m learning.play  --config tight_tracking --vx 0.8
+
+def _tight_tracking() -> Config:
+    """H1: the undershoot is a too-forgiving tracking reward.
+
+    The exp kernel with sigma=0.2 already pays ~0.6 at 0.48 m/s, so closing the
+    last 0.32 m/s buys little.  Sharpen the kernel and raise the tracking weight
+    so the missing speed is genuinely costly.
     """
-    A small, fast run to verify the *training loop* end-to-end (not to produce a
-    good policy).  Shrinks parallelism and horizon so it finishes quickly even on
-    a CPU-only Mac.  Use it once to confirm Brax PPO runs and eval reward moves,
-    then switch to default_config() on a GPU box for a real run.
+    cfg = Config(name="tight_tracking")
+    cfg.reward.weights["track_lin_vel"] = 3.0
+    cfg.reward.weights["track_ang_vel"] = 1.0
+    cfg.reward.tracking_sigma = 0.12
+    return cfg
+
+
+def _light_reg() -> Config:
+    """H2: the regularizers cap stride energy.
+
+    A heavy height penalty plus effort/smoothness costs suppress the dynamic
+    crouch-and-push of a faster gait.  Relax them so the policy is free to move
+    harder, trading some smoothness for speed.
     """
-    cfg = Config()
+    cfg = Config(name="light_reg")
+    cfg.reward.weights["base_height"] = -5.0
+    cfg.reward.weights["action_rate"] = -0.005
+    cfg.reward.weights["torques"] = -0.00005
+    return cfg
+
+
+def _more_authority() -> Config:
+    """H3: the residual action scale caps deviation from the slow scripted trot.
+
+    `residual_gait` adds scale*action on top of the scripted prior; at scale=0.3
+    the policy can't lengthen the stride much.  Widen the range so it can push
+    the legs further per step.
+    """
+    cfg = Config(name="more_authority")
+    cfg.action.scale = 0.45
+    return cfg
+
+
+EXPERIMENTS: Dict[str, Callable[[], Config]] = {
+    "baseline": default_config,
+    "tight_tracking": _tight_tracking,
+    "light_reg": _light_reg,
+    "more_authority": _more_authority,
+}
+
+
+def get_config(name: str = "baseline") -> Config:
+    """Look up a named experiment config; raises on an unknown name."""
+    if name not in EXPERIMENTS:
+        raise KeyError(f"unknown experiment {name!r}; choose from {sorted(EXPERIMENTS)}")
+    return EXPERIMENTS[name]()
+
+
+def smoke_ify(cfg: Config) -> Config:
+    """
+    Shrink any config to a small, fast run that verifies the *training loop*
+    end-to-end (not to produce a good policy).  Drops parallelism and horizon so
+    it finishes quickly even on a CPU-only Mac.  Use it once to confirm Brax PPO
+    runs and eval reward moves, then run full scale on a GPU box.
+    """
     cfg.ppo.num_timesteps = 2_000_000
     cfg.ppo.num_envs = 512
     cfg.ppo.episode_length = 500
@@ -152,3 +230,8 @@ def smoke_config() -> Config:
     cfg.ppo.unroll_length = 10
     cfg.ppo.num_evals = 5
     return cfg
+
+
+def smoke_config() -> Config:
+    """Baseline shrunk for a loop test (kept for backward compatibility)."""
+    return smoke_ify(default_config())

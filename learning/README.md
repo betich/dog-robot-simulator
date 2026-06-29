@@ -54,12 +54,23 @@ thousands of parallel envs — do long runs on a CUDA machine with `jax[cuda12]`
 
 ```bash
 python -m learning.check     # 1. validate wiring — random rollout, prints shapes
-python -m learning.train     # 2. train PPO, saves learning/checkpoints/anymal_ppo
+python -m learning.train     # 2. train PPO, saves learning/checkpoints/baseline/anymal_ppo
 python -m learning.play      # 3. watch the policy in the MuJoCo viewer
 ```
 
 Run `check` first — it builds the env and does a random rollout with no neural
 net, so it isolates "does the env work" from "does training work".
+
+**Experiments.** `train`/`play` take `--config <name>` to select a named config
+from `config.py` (`baseline`, `tight_tracking`, `light_reg`, `more_authority`).
+Each changes one shaping axis to chase the velocity-tracking benchmark; checkpoints
+go to `learning/checkpoints/<name>/`, renderings + metrics to `results/<name>/`.
+See [`results/README.md`](../results/README.md).
+
+```bash
+python -m learning.train --config tight_tracking
+python -m learning.play  --config tight_tracking --video --vx 0.8   # -> results/tight_tracking/
+```
 
 For a quick CPU smoke test of training, shrink the run in `config.py` (e.g.
 `PPOConfig.num_envs = 256`, `num_timesteps = 2_000_000`).

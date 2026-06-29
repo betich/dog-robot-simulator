@@ -24,15 +24,15 @@ from brax.io import model
 from brax.training.agents.ppo import networks as ppo_networks
 from brax.training.agents.ppo import train as ppo
 
-from learning.config import Config, default_config, smoke_config
+from learning.config import (
+    Config, EXPERIMENTS, checkpoint_path, default_config, get_config, smoke_ify,
+)
 from learning.env.mjx_env import make_env
 
-CHECKPOINT_DIR = os.path.join(os.path.dirname(__file__), "checkpoints")
-PARAMS_PATH = os.path.join(CHECKPOINT_DIR, "anymal_ppo")
 
-
-def train(cfg: Config = None, params_path: str = PARAMS_PATH):
+def train(cfg: Config = None, params_path: str = None):
     cfg = cfg or default_config()
+    params_path = params_path or checkpoint_path(cfg.name)
     p = cfg.ppo
 
     env = make_env(cfg)
@@ -85,7 +85,7 @@ def train(cfg: Config = None, params_path: str = PARAMS_PATH):
         progress_fn=progress,
     )
 
-    os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+    os.makedirs(os.path.dirname(params_path), exist_ok=True)
     model.save_params(params_path, params)
     print(f"\nsaved policy -> {params_path}")
     return make_inference_fn, params
@@ -95,6 +95,8 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
+    parser.add_argument("--config", default="baseline", choices=sorted(EXPERIMENTS),
+                        help="experiment config to train (see learning/config.py)")
     parser.add_argument("--smoke", action="store_true",
                         help="short run to verify the training loop end-to-end")
     parser.add_argument("--steps", type=int, default=None,
@@ -103,7 +105,9 @@ if __name__ == "__main__":
                         help="override num_envs (lower on CPU, higher on GPU)")
     args = parser.parse_args()
 
-    cfg = smoke_config() if args.smoke else default_config()
+    cfg = get_config(args.config)
+    if args.smoke:
+        cfg = smoke_ify(cfg)
     if args.steps is not None:
         cfg.ppo.num_timesteps = args.steps
     if args.envs is not None:

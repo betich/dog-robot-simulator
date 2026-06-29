@@ -19,6 +19,7 @@ Arrow keys (live mode):
 
 from __future__ import annotations
 
+import os
 import time
 
 import jax
@@ -29,9 +30,10 @@ from brax.io import model
 from brax.training.acme import running_statistics
 from brax.training.agents.ppo import networks as ppo_networks
 
-from learning.config import Config, default_config
+from learning.config import (
+    Config, EXPERIMENTS, checkpoint_path, get_config, results_dir,
+)
 from learning.env.mjx_env import make_env
-from learning.train import PARAMS_PATH
 
 
 def build_policy(env, cfg: Config, params):
@@ -48,11 +50,13 @@ def build_policy(env, cfg: Config, params):
     return ppo_networks.make_inference_fn(networks)(params, deterministic=True)
 
 
-def _load(params_path: str):
-    cfg = default_config()
+def _load(config_name: str, params_path: str = None):
+    # Rebuild the *exact* config used for training (action scale / obs / reward
+    # all shape the env the policy expects), then load that experiment's params.
+    cfg = get_config(config_name)
     cfg.command.resample_time = 0.0        # hold the command fixed during playback
     env = make_env(cfg)
-    params = model.load_params(params_path)
+    params = model.load_params(params_path or checkpoint_path(cfg.name))
     policy = jax.jit(build_policy(env, cfg, params))
     reset = jax.jit(env.reset)
     step = jax.jit(env.step)
@@ -64,13 +68,13 @@ def _with_command(state, cmd):
 
 
 # ── headless video ────────────────────────────────────────────────────────────
-def run_video(params_path, out_path, seconds, command):
+def run_video(config_name, out_path, seconds, command, params_path=None):
     try:
         import imageio
     except ImportError:
         raise SystemExit("video mode needs imageio:  pip install imageio")
 
-    env, policy, reset, step = _load(params_path)
+    env, policy, reset, step = _load(config_name, params_path)
     mj_model = env.robot.mj_model
     mj_data = mujoco.MjData(mj_model)
 
@@ -103,12 +107,23 @@ def run_video(params_path, out_path, seconds, command):
             state = reset(key)
 
     renderer.close()
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     imageio.mimsave(out_path, frames, fps=round(1.0 / env.dt))
 
     mean_vx = sum(speeds) / len(speeds)
+    summary = (f"mean forward speed: {mean_vx:+.3f} m/s   (command vx={command[0]:+.2f})   "
+               f"falls/resets: {resets}")
     print(f"wrote {out_path}")
-    print(f"mean forward speed: {mean_vx:+.3f} m/s   (command vx={command[0]:+.2f})   "
-          f"falls/resets: {resets}")
+    print(summary)
+
+    # Record the benchmark next to the rendering so experiments stay comparable.
+    metrics_path = os.path.join(os.path.dirname(os.path.abspath(out_path)), "metrics.txt")
+    with open(metrics_path, "w") as f:
+        f.write(f"config:    {config_name}\n")
+        f.write(f"command:   vx={command[0]:+.2f} vy={command[1]:+.2f} wz={command[2]:+.2f}\n")
+        f.write(f"seconds:   {seconds}\n")
+        f.write(f"{summary}\n")
+    print(f"wrote {metrics_path}")
 
 
 # ── interactive viewer ────────────────────────────────────────────────────────
@@ -126,10 +141,10 @@ def _key_callback(cmd):
     return cb
 
 
-def run_viewer(params_path):
+def run_viewer(config_name, params_path=None):
     import mujoco.viewer
 
-    env, policy, reset, step = _load(params_path)
+    env, policy, reset, step = _load(config_name, params_path)
     mj_model = env.robot.mj_model
     mj_data = mujoco.MjData(mj_model)
 
@@ -160,16 +175,22 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--params", default=PARAMS_PATH)
-    parser.add_argument("--video", metavar="PATH",
-                        help="render to this file (e.g. walk.gif) instead of a window")
+    parser.add_argument("--config", default="baseline", choices=sorted(EXPERIMENTS),
+                        help="which experiment policy to play (see learning/config.py)")
+    parser.add_argument("--params", default=None,
+                        help="override checkpoint path (defaults to the config's)")
+    parser.add_argument("--video", metavar="PATH", nargs="?", const="",
+                        help="render to a file instead of a window; with no path, "
+                             "writes results/<config>/rollout.gif")
     parser.add_argument("--seconds", type=float, default=8.0)
     parser.add_argument("--vx", type=float, default=0.8, help="forward command (m/s)")
     parser.add_argument("--vy", type=float, default=0.0, help="lateral command (m/s)")
     parser.add_argument("--wz", type=float, default=0.0, help="yaw command (rad/s)")
     args = parser.parse_args()
 
-    if args.video:
-        run_video(args.params, args.video, args.seconds, [args.vx, args.vy, args.wz])
+    if args.video is not None:
+        out_path = args.video or os.path.join(results_dir(args.config), "rollout.gif")
+        run_video(args.config, out_path, args.seconds,
+                  [args.vx, args.vy, args.wz], params_path=args.params)
     else:
-        run_viewer(args.params)
+        run_viewer(args.config, args.params)
