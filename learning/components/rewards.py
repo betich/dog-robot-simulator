@@ -42,14 +42,15 @@ def alive(env, data, action, info) -> jp.ndarray:
 
 @REWARDS.register("base_height")
 def base_height(env, data, action, info) -> jp.ndarray:
-    """Exp kernel rewarding the torso for holding its standing height (1 = on target).
+    """Squared torso-height deviation from target (use with a NEGATIVE weight).
 
-    Counters the under-trained 'crouch and shuffle' optimum, where the robot
-    lowers its belly to cheaply dodge the orientation/torque penalties.
+    A penalty, not a bonus: it is 0 when the robot stands at target height and
+    grows as it crouches, so it discourages the belly-down shuffle WITHOUT paying
+    the robot to stand still.  (A positive 'tall' bonus competes with the walking
+    reward and creates a march-in-place optimum — which is exactly what happened.)
     """
     h = env.base_pos(data)[2]
-    err = jp.square(h - env.cfg.reward.base_height_target)
-    return jp.exp(-err / env.cfg.reward.base_height_sigma)
+    return jp.square(h - env.cfg.reward.base_height_target)
 
 
 # ── shaping penalties (use with negative weights) ────────────────────────────

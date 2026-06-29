@@ -61,20 +61,19 @@ class RewardConfig:
     # Positive = encourage, negative = penalize.  This recipe is the standard
     # "track a velocity command while staying upright and smooth".
     weights: Dict[str, float] = field(default_factory=lambda: {
-        "track_lin_vel":   1.5,
+        "track_lin_vel":   2.0,         # dominant: reaching commanded speed must pay most
         "track_ang_vel":   0.8,
         "alive":           0.5,
-        "base_height":     1.0,         # reward standing tall (anti-crouch)
+        "base_height":    -15.0,        # PENALTY for crouching (0 when tall) — see rewards.py
         "lin_vel_z":      -2.0,
         "ang_vel_xy":     -0.05,
         "orientation":    -5.0,
-        "torques":        -0.0002,
+        "torques":        -0.0001,      # lowered: don't price walking out of the budget
         "action_rate":    -0.01,
         "joint_limits":   -1.0,
     })
-    tracking_sigma: float = 0.25        # width of the velocity-tracking kernel
-    base_height_target: float = 0.55    # m; the standing torso height to hold
-    base_height_sigma: float = 0.02     # width of the height-tracking kernel
+    tracking_sigma: float = 0.2         # tighter -> more pressure to hit the full speed
+    base_height_target: float = 0.52    # m; allow a slight dip below the 0.56 stance
 
 
 @dataclass
