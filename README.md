@@ -2,6 +2,8 @@
 
 This is my playground for trying MuJoCo + Open-RMF Simulation robot simulation on MacOS.
 
+![Trained walking policy](walk2.gif)
+
 ```
 MuJoCo (macOS)          ZMQ          Docker (ROS 2 Humble)
 ┌──────────────┐  state :5555 →  ┌──────────────────┐
