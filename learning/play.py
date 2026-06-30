@@ -31,7 +31,8 @@ from brax.training.acme import running_statistics
 from brax.training.agents.ppo import networks as ppo_networks
 
 from learning.config import (
-    Config, EXPERIMENTS, checkpoint_path, get_config, results_dir,
+    Config, EXPERIMENTS, best_checkpoint_path, checkpoint_path, get_config,
+    results_dir,
 )
 from learning.env.mjx_env import make_env
 
@@ -117,9 +118,14 @@ def run_video(config_name, out_path, seconds, command, params_path=None):
     print(summary)
 
     # Record the benchmark next to the rendering so experiments stay comparable.
-    metrics_path = os.path.join(os.path.dirname(os.path.abspath(out_path)), "metrics.txt")
+    # Name it after the gif (rollout.gif -> metrics.txt, rollout_best.gif ->
+    # metrics_best.txt) so a --best render doesn't clobber the final's metrics.
+    abs_out = os.path.abspath(out_path)
+    stem = os.path.splitext(os.path.basename(abs_out))[0].replace("rollout", "metrics")
+    metrics_path = os.path.join(os.path.dirname(abs_out), f"{stem}.txt")
     with open(metrics_path, "w") as f:
         f.write(f"config:    {config_name}\n")
+        f.write(f"checkpoint:{os.path.basename(params_path or checkpoint_path(config_name))}\n")
         f.write(f"command:   vx={command[0]:+.2f} vy={command[1]:+.2f} wz={command[2]:+.2f}\n")
         f.write(f"seconds:   {seconds}\n")
         f.write(f"{summary}\n")
@@ -177,6 +183,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="baseline", choices=sorted(EXPERIMENTS),
                         help="which experiment policy to play (see learning/config.py)")
+    parser.add_argument("--best", action="store_true",
+                        help="load the best-eval checkpoint (.best) instead of the final")
     parser.add_argument("--params", default=None,
                         help="override checkpoint path (defaults to the config's)")
     parser.add_argument("--video", metavar="PATH", nargs="?", const="",
@@ -188,9 +196,14 @@ if __name__ == "__main__":
     parser.add_argument("--wz", type=float, default=0.0, help="yaw command (rad/s)")
     args = parser.parse_args()
 
+    params_path = args.params or (best_checkpoint_path(args.config) if args.best
+                                  else checkpoint_path(args.config))
+
     if args.video is not None:
-        out_path = args.video or os.path.join(results_dir(args.config), "rollout.gif")
+        suffix = "_best" if args.best else ""
+        out_path = args.video or os.path.join(
+            results_dir(args.config), f"rollout{suffix}.gif")
         run_video(args.config, out_path, args.seconds,
-                  [args.vx, args.vy, args.wz], params_path=args.params)
+                  [args.vx, args.vy, args.wz], params_path=params_path)
     else:
-        run_viewer(args.config, args.params)
+        run_viewer(args.config, params_path)

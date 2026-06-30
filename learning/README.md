@@ -69,8 +69,13 @@ See [`results/README.md`](../results/README.md).
 
 ```bash
 python -m learning.train --config tight_tracking
-python -m learning.play  --config tight_tracking --video --vx 0.8   # -> results/tight_tracking/
+python -m learning.play  --config tight_tracking --video --vx 0.8        # final policy
+python -m learning.play  --config tight_tracking --best --video --vx 0.8  # best-eval policy
 ```
+
+`train` saves the **final** params to `learning/checkpoints/<name>/anymal_ppo` and
+the **best-eval** params to `…/anymal_ppo.best` (eval curves are non-monotonic, so
+the final policy can be worse than the peak — `--best` plays the peak).
 
 For a quick CPU smoke test of training, shrink the run in `config.py` (e.g.
 `PPOConfig.num_envs = 256`, `num_timesteps = 2_000_000`).

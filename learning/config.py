@@ -22,8 +22,14 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def checkpoint_path(name: str) -> str:
-    """Where train.py saves / play.py loads an experiment's policy params."""
+    """Where train.py saves / play.py loads an experiment's FINAL policy params."""
     return os.path.join(REPO_ROOT, "learning", "checkpoints", name, "anymal_ppo")
+
+
+def best_checkpoint_path(name: str) -> str:
+    """Params from the highest-eval-reward step (eval curves are non-monotonic, so
+    the final policy can be much worse than the best — see results/README.md)."""
+    return checkpoint_path(name) + ".best"
 
 
 def results_dir(name: str) -> str:

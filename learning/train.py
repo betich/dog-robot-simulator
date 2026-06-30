@@ -25,7 +25,8 @@ from brax.training.agents.ppo import networks as ppo_networks
 from brax.training.agents.ppo import train as ppo
 
 from learning.config import (
-    Config, EXPERIMENTS, checkpoint_path, default_config, get_config, smoke_ify,
+    Config, EXPERIMENTS, best_checkpoint_path, checkpoint_path, default_config,
+    get_config, smoke_ify,
 )
 from learning.env.mjx_env import make_env
 
@@ -33,6 +34,7 @@ from learning.env.mjx_env import make_env
 def train(cfg: Config = None, params_path: str = None):
     cfg = cfg or default_config()
     params_path = params_path or checkpoint_path(cfg.name)
+    best_path = best_checkpoint_path(cfg.name)
     p = cfg.ppo
 
     env = make_env(cfg)
@@ -55,14 +57,33 @@ def train(cfg: Config = None, params_path: str = None):
                  if "reward" in k and "std" not in k and k.startswith("eval")]
         return cands[0] if cands else None
 
+    # Eval curves are non-monotonic (a policy can peak mid-training then collapse),
+    # and ppo.train only RETURNS the final params.  So we also snapshot the params
+    # at the best-eval step.  progress_fn runs right before policy_params_fn at each
+    # eval, so it stashes the reward and save_best reads it alongside the params.
+    latest = {"reward": float("nan")}
+    best = {"reward": float("-inf"), "step": 0}
+
     def progress(num_steps, metrics):
         if num_steps == 0:
             print("eval metric keys:", sorted(k for k in metrics if "eval" in k))
         key = _reward_key(metrics)
         reward = float(metrics[key]) if key else float("nan")
+        latest["reward"] = reward
         length = float(metrics.get("eval/avg_episode_length", float("nan")))
         print(f"[{time.time()-t0:6.0f}s] steps={num_steps:>12,}  "
               f"eval_reward={reward:8.3f}  ep_len={length:7.1f}  ({key})")
+
+    def save_best(current_step, make_policy, params):
+        r = latest["reward"]
+        if r == r and r > best["reward"]:        # r == r rejects NaN
+            best["reward"], best["step"] = r, current_step
+            # brax hands us (normalizer, PPONetworkParams(policy, value)); the
+            # inference path (and the final save) wants (normalizer, policy) only,
+            # so drop the value net to keep .best loadable by play.py.
+            normalizer, net = params
+            os.makedirs(os.path.dirname(best_path), exist_ok=True)
+            model.save_params(best_path, (normalizer, net.policy))
 
     make_inference_fn, params, _ = ppo.train(
         environment=env,
@@ -83,11 +104,16 @@ def train(cfg: Config = None, params_path: str = None):
         seed=p.seed,
         network_factory=network_factory,
         progress_fn=progress,
+        policy_params_fn=save_best,
     )
 
     os.makedirs(os.path.dirname(params_path), exist_ok=True)
     model.save_params(params_path, params)
-    print(f"\nsaved policy -> {params_path}")
+    print(f"\nsaved final policy -> {params_path}")
+    print(f"saved best   policy -> {best_path}  "
+          f"(eval_reward={best['reward']:.3f} @ {best['step']:,} steps)")
+    print("play the best with:  python -m learning.play --config "
+          f"{cfg.name} --best --video --vx 0.8")
     return make_inference_fn, params
 
 

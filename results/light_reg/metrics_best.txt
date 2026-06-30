@@ -1,0 +1,5 @@
+config:    light_reg
+checkpoint:anymal_ppo.best
+command:   vx=+0.80 vy=+0.00 wz=+0.00
+seconds:   8.0
+mean forward speed: +0.075 m/s   (command vx=+0.80)   falls/resets: 0

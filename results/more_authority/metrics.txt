@@ -1,0 +1,4 @@
+config:    more_authority
+command:   vx=+0.80 vy=+0.00 wz=+0.00
+seconds:   8.0
+mean forward speed: +0.117 m/s   (command vx=+0.80)   falls/resets: 8
