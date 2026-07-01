@@ -61,11 +61,52 @@ python -m learning.play      # 3. watch the policy in the MuJoCo viewer
 Run `check` first — it builds the env and does a random rollout with no neural
 net, so it isolates "does the env work" from "does training work".
 
+**Live viewer the easy way.** `./run.sh <config>` (from the repo root) opens a
+viewer with an **on-screen control panel** and selects which trained model to
+drive:
+
+```bash
+./run.sh                 # default config (baseline)
+./run.sh full_loop       # the full-loop policy
+./run.sh full_loop --best
+```
+
+The window is a small custom GLFW viewer (not `launch_passive`) so it can draw
+clickable buttons over the scene — **click a button** to drive, or press its
+letter key; the active command is highlighted green and echoed top-left. Each
+input sets the whole `(vx, vy, wz)` command and holds it until the next one;
+magnitudes read from the config's command ranges, so they match what the policy
+was trained on.
+
+```
+  W  walk forward      R  run (max speed)     S  walk backward
+  A  strafe left       D  strafe right        Q  turn left   E  turn right
+  X  stop
+```
+
+Drag to orbit the camera, scroll to zoom, **Esc** to quit. Because we own the
+GLFW loop (no MuJoCo `simulate` underneath), the keys can't collide with anything
+— and it runs under the venv's plain `python`, **not** `mjpython` (which reserves
+the macOS main thread that GLFW needs). `run.sh` handles that for you.
+
 **Experiments.** `train`/`play` take `--config <name>` to select a named config
-from `config.py` (`baseline`, `tight_tracking`, `light_reg`, `more_authority`).
-Each changes one shaping axis to chase the velocity-tracking benchmark; checkpoints
-go to `learning/checkpoints/<name>/`, renderings + metrics to `results/<name>/`.
-See [`results/README.md`](../results/README.md).
+from `config.py` (`baseline`, `tight_tracking`, `light_reg`, `more_authority`,
+`full_loop`). Each changes one shaping axis to chase the velocity-tracking
+benchmark; checkpoints go to `learning/checkpoints/<name>/`, renderings + metrics
+to `results/<name>/`. See [`results/README.md`](../results/README.md).
+
+**`full_loop`** is the config for the complete locomotion loop — walk, run,
+backward, strafe L/R, turn L/R. The `baseline`-class configs undershoot because
+uniform command sampling never trains the *extremes*; `full_loop` swaps in the
+`velocity_modes` sampler (frequently draws each canonical full-magnitude command)
+and widens `lin_vel_x` to `(-0.6, 1.5)` so "run" is a genuinely faster, trained
+speed. Reward shaping stays at baseline (the only one that produced real
+translation). Retrain it, then drive it live:
+
+```bash
+python -m learning.train --config full_loop          # retrain (wants a GPU)
+./run.sh full_loop                                    # live viewer (see keys below)
+```
 
 ```bash
 python -m learning.train --config tight_tracking

@@ -110,6 +110,9 @@ class CommandConfig:
     lin_vel_y: Tuple[float, float] = (-0.4, 0.4)
     ang_vel_z: Tuple[float, float] = (-0.8, 0.8)   # rad/s
     resample_time: float = 5.0          # s; resample command mid-episode (0 = never)
+    # Used only by the "velocity_modes" sampler (ignored by "velocity_2d"):
+    mode_prob: float = 0.5              # P(draw a canonical full-magnitude command)
+    mode_jitter: float = 0.05          # jitter added to a mode command (m/s, rad/s)
 
 
 @dataclass
@@ -206,11 +209,33 @@ def _more_authority() -> Config:
     return cfg
 
 
+def _full_loop() -> Config:
+    """The full locomotion loop: walk, run, backward, strafe L/R, turn L/R.
+
+    The undershoot diagnosis (results/README.md) was that uniform command
+    sampling never trains the *extremes*, so the policy learns a near-stationary
+    tracker.  This config fixes the command DISTRIBUTION rather than the reward:
+    the `velocity_modes` sampler frequently draws each canonical full-magnitude
+    command, and the `lin_vel_x` top end is widened so "run" is a genuinely faster
+    speed that is actually trained (the live `R` key maps to this max).
+
+    Reward shaping, `tracking_sigma`, and `action.scale` stay at baseline on
+    purpose: baseline is the only shaping that produced real translation, while
+    `more_authority` (scale 0.45) was unstable and `tight_tracking` (sigma 0.12)
+    killed the tracking gradient.  PPO hyperparameters are unchanged.
+    """
+    cfg = Config(name="full_loop")
+    cfg.command.name = "velocity_modes"
+    cfg.command.lin_vel_x = (-0.6, 1.5)   # widen so "run" (max vx) is faster
+    return cfg
+
+
 EXPERIMENTS: Dict[str, Callable[[], Config]] = {
     "baseline": default_config,
     "tight_tracking": _tight_tracking,
     "light_reg": _light_reg,
     "more_authority": _more_authority,
+    "full_loop": _full_loop,
 }
 
 

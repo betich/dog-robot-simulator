@@ -14,7 +14,8 @@ count. The baseline stays upright but undershoots badly — it's stable but lazy
 
 | Experiment              | Change vs baseline            | mean fwd speed | falls | eval_reward | verdict |
 | ----------------------- | ----------------------------- | -------------- | ----- | ----------- | ------- |
-| `baseline`              | —                             | **+0.483 m/s** | 0     | —           | **best** |
+| `baseline`              | —                             | **+0.483 m/s** | 0     | —           | **best (so far)** |
+| `full_loop`             | `velocity_modes` sampler + `vx∈(-0.6,1.5)` | _pending retrain_ | — | — | the command-distribution fix below |
 | `more_authority` (60M)  | `action.scale` 0.3→0.45       | +0.117 m/s     | 8     | negative    | unstable, topples |
 | `light_reg` **best** @13.8M | relaxed regularizers      | +0.075 m/s     | 0     | **15.9**    | ~stationary |
 | `light_reg` (60M final) | relaxed regularizers          | +0.046 m/s     | 0     | ~0.8        | stands still |
@@ -61,18 +62,37 @@ correct hygiene (eval curves are non-monotonic, and `train.py` otherwise returns
 only the final params). `train.py` now also saves the highest-eval-reward params to
 `<ckpt>.best`; play with `play --config <name> --best`.
 
-### The one direction that follows from the evidence
+### The one direction that follows from the evidence — now implemented as `full_loop`
 
 **Fix the command distribution, not the reward shape.** Training rarely sees
-`vx=0.8`, so the policy never learns it. Options, in order:
+`vx=0.8` (let alone strafe/backward/run), so the policy never learns it. The
+`full_loop` config acts on this directly:
 
-1. Sample `vx` biased toward the high end (or a curriculum that ramps the range up),
-   so the benchmark speed is actually trained — this is the direct fix.
-2. Or change the benchmark to match the training distribution if 0.8 isn't the real
-   target. (The mismatch itself is the bug — pick which side to move.)
+- **`velocity_modes` command sampler** (`learning/components/commands.py`) — with
+  probability `mode_prob` (0.5) it draws one of the loop's *canonical
+  full-magnitude* commands (forward/run, backward, strafe L/R, turn L/R, stop) at
+  a range endpoint, instead of a uniform draw that averages to ~0. Every loop
+  behaviour is now seen often. (Verified: ~9% run, ~8% backward, ~20% strafe, ~17%
+  turn, ~7% stop across 20k samples — vs near-zero density at the extremes under
+  uniform sampling.)
+- **`lin_vel_x` widened to `(-0.6, 1.5)`** so "run" is a genuinely faster speed
+  that is actually trained; the live `R` key maps to this max.
+- Reward shaping / `action.scale` / `tracking_sigma` stay at **baseline** — the
+  only shaping that produced real translation. `more_authority` and
+  `tight_tracking` showed those axes are red herrings.
 
-Reward-weight and action-scale tuning are red herrings until the policy is actually
-asked to go 0.8 during training.
+Retrain and benchmark per direction:
+
+```bash
+python -m learning.train --config full_loop
+python -m learning.play  --config full_loop --video --vx 1.5   # run
+python -m learning.play  --config full_loop --video --vx -0.5  # backward
+python -m learning.play  --config full_loop --video --vy 0.4   # strafe left
+python -m learning.play  --config full_loop --video --wz 0.6   # turn left
+```
+
+`metrics.txt` now reports mean `vx`/`vy`/`wz` so each direction is measurable (the
+old single forward-x number couldn't show strafe or turn).
 
 ## What each experiment changes vs baseline
 

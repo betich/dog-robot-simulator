@@ -1,0 +1,5 @@
+config:    full_loop
+checkpoint:anymal_ppo
+command:   vx=+0.80 vy=+0.00 wz=+0.60
+seconds:   8.0
+mean vx=+0.157 m/s  vy=+0.279 m/s  wz=+0.216 rad/s   (command vx=+0.80 vy=+0.00 wz=+0.60)   falls/resets: 0
